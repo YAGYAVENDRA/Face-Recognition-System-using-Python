@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify - Face Recognition App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Identity Verification</h1>
+        <div class="card">
+            <div id="camera-container">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas" style="display:none;"></canvas>
+                <div class="camera-overlay">
+                    <div class="face-guide"></div>
+                </div>
+            </div>
+            <div id="result-container" style="display:none;">
+                <div id="result-message"></div>
+                <div id="user-info" style="display:none;">
+                    <img id="user-image" src="" alt="User image">
+                    <h3 id="user-name"></h3>
+                </div>
+            </div>
+            <div class="button-group">
+                <button id="verify-btn" class="btn primary" disabled>
+                    <span class="loading-indicator" style="display:none;"></span>
+                    Verify Identity
+                </button>
+                <button id="retry-btn" class="btn secondary" style="display:none;">Try Again</button>
+            </div>
+            <a href="{{ url_for('index') }}" class="back-link">← Back to Home</a>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const verifyBtn = document.getElementById('verify-btn');
+            const loadingIndicator = verifyBtn.querySelector('.loading-indicator');
+            const retryBtn = document.getElementById('retry-btn');
+            const cameraContainer = document.getElementById('camera-container');
+            const resultContainer = document.getElementById('result-container');
+            const resultMessage = document.getElementById('result-message');
+            const userInfo = document.getElementById('user-info');
+            const userImage = document.getElementById('user-image');
+            const userName = document.getElementById('user-name');
+            
+            let stream;
+
+            // Start camera with improved settings
+            async function startCamera() {
+                try {
+                    // Show loading indicator
+                    loadingIndicator.style.display = 'inline-block';
+                    resultMessage.innerHTML = '<div class="info">Initializing camera...</div>';
+                    resultContainer.style.display = 'block';
+                    
+                    // Request high-quality video with specific constraints
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            facingMode: "user",
+                            frameRate: { min: 15 }
+                        }
+                    });
+                    video.srcObject = stream;
+                    
+                    // Wait for video to be ready before enabling verify button
+                    video.onloadedmetadata = function() {
+                        // Hide loading indicator
+                        loadingIndicator.style.display = 'none';
+                        verifyBtn.disabled = false;
+                        resultMessage.innerHTML = '<div class="info">Camera ready! Position your face in the circle and click "Verify Identity"</div>';
+                    };
+                    
+                    // Handle potential playback errors
+                    video.onerror = function(error) {
+                        loadingIndicator.style.display = 'none';
+                        resultMessage.innerHTML = `<div class="error">Video playback error: ${error.message}</div>`;
+                    };
+                    
+                    // Start video playback
+                    video.play().catch(error => {
+                        loadingIndicator.style.display = 'none';
+                        resultMessage.innerHTML = `<div class="error">Video playback failed: ${error.message}</div>`;
+                    });
+                } catch (err) {
+                    loadingIndicator.style.display = 'none';
+                    resultMessage.innerHTML = `<div class="error">Camera access denied: ${err.message}</div>`;
+                    resultContainer.style.display = 'block';
+                    cameraContainer.style.display = 'none';
+                }
+            }
+
+            // Improved verify identity function
+            verifyBtn.addEventListener('click', async function() {
+                // Disable button to prevent multiple clicks
+                verifyBtn.disabled = true;
+                loadingIndicator.style.display = 'inline-block';
+                
+                // Set canvas dimensions to match video dimensions
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                const context = canvas.getContext('2d');
+                
+                // Clear any previous content
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw the current video frame to the canvas
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Get the image data with proper quality
+                const imageData = canvas.toDataURL('image/jpeg', 0.95);
+                
+                resultMessage.innerHTML = '<div class="info">Verifying your identity...</div>';
+                resultContainer.style.display = 'block';
+                
+                try {
+                    const response = await fetch('/api/verify', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            image: imageData
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    // Hide loading indicator
+                    loadingIndicator.style.display = 'none';
+                    
+                    if (result.success) {
+                        // Stop the camera stream
+                        if (stream) {
+                            stream.getTracks().forEach(track => track.stop());
+                        }
+                        
+                        cameraContainer.style.display = 'none';
+                        verifyBtn.style.display = 'none';
+                        retryBtn.style.display = 'inline-block';
+                        
+                        resultMessage.innerHTML = `<div class="success">${result.message}</div>`;
+                        userImage.src = `/${result.user.image_path}`;
+                        
+                        // Make sure image loads properly
+                        userImage.onload = function() {
+                            userName.textContent = result.user.name;
+                            userInfo.style.display = 'flex';
+                        };
+                        
+                        userImage.onerror = function() {
+                            resultMessage.innerHTML += '<div class="error">Failed to load user image.</div>';
+                        };
+                    } else {
+                        resultMessage.innerHTML = `<div class="error">${result.message}</div>`;
+                        retryBtn.style.display = 'inline-block';
+                        verifyBtn.style.display = 'none';
+                    }
+                } catch (err) {
+                    loadingIndicator.style.display = 'none';
+                    resultMessage.innerHTML = `<div class="error">Verification failed: ${err.message}</div>`;
+                    retryBtn.style.display = 'inline-block';
+                    verifyBtn.style.display = 'none';
+                }
+            });
+
+            // Improved retry function
+            retryBtn.addEventListener('click', function() {
+                cameraContainer.style.display = 'block';
+                userInfo.style.display = 'none';
+                verifyBtn.style.display = 'inline-block';
+                retryBtn.style.display = 'none';
+                
+                // Restart the camera
+                startCamera();
+            });
+
+            // Initialize with disabled verify button until camera is ready
+            verifyBtn.disabled = true;
+            startCamera();
+        });
+    </script>
+</body>
+</html>
