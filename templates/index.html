@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Face Recognition System</h1>
+        <div class="card">
+            <h2>Welcome to the Facial Recognition System</h2>
+            <p>Choose an option below:</p>
+            <div class="button-group">
+                <a href="{{ url_for('register') }}" class="btn primary">Register New User</a>
+                <a href="{{ url_for('verify') }}" class="btn secondary">Verify Identity</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
