@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Face Recognition App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>User Registration</h1>
+        <div class="card">
+            <div id="camera-container">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas" style="display:none;"></canvas>
+                <div class="camera-overlay">
+                    <div class="face-guide"></div>
+                </div>
+            </div>
+            <div id="preview-container" style="display:none;">
+                <img id="captured-image" src="" alt="Captured image">
+            </div>
+            <div class="form-group">
+                <label for="name">Your Name:</label>
+                <input type="text" id="name" placeholder="Enter your full name" required>
+            </div>
+            <div class="button-group">
+                <button id="capture-btn" class="btn primary" disabled>
+                    <span class="loading-indicator" style="display:none;"></span>
+                    Capture Photo
+                </button>
+                <button id="retake-btn" class="btn secondary" style="display:none;">Retake Photo</button>
+                <button id="register-btn" class="btn success" style="display:none;">Register</button>
+            </div>
+            <div id="status-message"></div>
+            <a href="{{ url_for('index') }}" class="back-link">← Back to Home</a>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const captureBtn = document.getElementById('capture-btn');
+            const loadingIndicator = captureBtn.querySelector('.loading-indicator');
+            const retakeBtn = document.getElementById('retake-btn');
+            const registerBtn = document.getElementById('register-btn');
+            const nameInput = document.getElementById('name');
+            const capturedImage = document.getElementById('captured-image');
+            const cameraContainer = document.getElementById('camera-container');
+            const previewContainer = document.getElementById('preview-container');
+            const statusMessage = document.getElementById('status-message');
+            
+            let stream;
+            let capturedImageData = null;
+
+            // Start camera with improved settings
+            async function startCamera() {
+                try {
+                    // Show loading indicator
+                    loadingIndicator.style.display = 'inline-block';
+                    statusMessage.innerHTML = '<div class="info">Initializing camera...</div>';
+                    
+                    // Request high-quality video with specific constraints
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            facingMode: "user",
+                            frameRate: { min: 15 }
+                        }
+                    });
+                    video.srcObject = stream;
+                    
+                    // Wait for video to be ready before enabling capture button
+                    video.onloadedmetadata = function() {
+                        // Hide loading indicator
+                        loadingIndicator.style.display = 'none';
+                        captureBtn.disabled = false;
+                        statusMessage.innerHTML = '<div class="info">Camera ready! Position your face in the circle and click "Capture Photo"</div>';
+                    };
+                    
+                    // Handle potential playback errors
+                    video.onerror = function(error) {
+                        loadingIndicator.style.display = 'none';
+                        statusMessage.innerHTML = `<div class="error">Video playback error: ${error.message}</div>`;
+                    };
+                    
+                    // Start video playback
+                    video.play().catch(error => {
+                        loadingIndicator.style.display = 'none';
+                        statusMessage.innerHTML = `<div class="error">Video playback failed: ${error.message}</div>`;
+                    });
+                } catch (err) {
+                    loadingIndicator.style.display = 'none';
+                    statusMessage.innerHTML = `<div class="error">Camera access denied: ${err.message}</div>`;
+                }
+            }
+
+            // Improved capture photo function
+            captureBtn.addEventListener('click', function() {
+                // Disable button to prevent multiple clicks
+                captureBtn.disabled = true;
+                
+                // Set canvas dimensions to match video dimensions
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                const context = canvas.getContext('2d');
+                
+                // Clear any previous content
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw the current video frame to the canvas
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Get the image data with proper quality
+                capturedImageData = canvas.toDataURL('image/jpeg', 0.95);
+                
+                // Display the captured image
+                capturedImage.src = capturedImageData;
+                capturedImage.onload = function() {
+                    // Only show preview after image has loaded successfully
+                    cameraContainer.style.display = 'none';
+                    previewContainer.style.display = 'block';
+                    captureBtn.style.display = 'none';
+                    retakeBtn.style.display = 'inline-block';
+                    registerBtn.style.display = 'inline-block';
+                };
+                
+                capturedImage.onerror = function() {
+                    statusMessage.innerHTML = '<div class="error">Failed to capture image. Please try again.</div>';
+                    captureBtn.disabled = false;
+                };
+                
+                // Stop the camera stream to save resources
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+            });
+
+            // Improved retake photo function
+            retakeBtn.addEventListener('click', function() {
+                cameraContainer.style.display = 'block';
+                previewContainer.style.display = 'none';
+                captureBtn.style.display = 'inline-block';
+                retakeBtn.style.display = 'none';
+                registerBtn.style.display = 'none';
+                statusMessage.innerHTML = '';
+                capturedImageData = null;
+                
+                // Clear the captured image
+                capturedImage.src = '';
+                
+                // Restart the camera
+                startCamera();
+            });
+
+            // Register user
+            registerBtn.addEventListener('click', async function() {
+                const name = nameInput.value.trim();
+                
+                if (!name) {
+                    statusMessage.innerHTML = '<div class="error">Please enter your name</div>';
+                    return;
+                }
+                
+                if (!capturedImageData) {
+                    statusMessage.innerHTML = '<div class="error">Please capture your photo</div>';
+                    return;
+                }
+                
+                // Disable button to prevent multiple submissions
+                registerBtn.disabled = true;
+                retakeBtn.disabled = true;
+                
+                statusMessage.innerHTML = '<div class="info">Processing registration...</div>';
+                
+                try {
+                    const response = await fetch('/api/register', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            name: name,
+                            image: capturedImageData
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        statusMessage.innerHTML = `<div class="success">${result.message}</div>`;
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 2000);
+                    } else {
+                        statusMessage.innerHTML = `<div class="error">${result.message}</div>`;
+                        registerBtn.disabled = false;
+                        retakeBtn.disabled = false;
+                    }
+                } catch (err) {
+                    statusMessage.innerHTML = `<div class="error">Registration failed: ${err.message}</div>`;
+                    registerBtn.disabled = false;
+                    retakeBtn.disabled = false;
+                }
+            });
+
+            // Initialize with disabled capture button until camera is ready
+            captureBtn.disabled = true;
+            startCamera();
+        });
+    </script>
+</body>
+</html>
